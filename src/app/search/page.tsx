@@ -62,7 +62,7 @@ export default function SearchPage() {
   return (
     <AppShell>
       <h1 className="mb-6 text-3xl font-bold">🔎 گەڕان</h1>
-      <Suspense fallback={null}>
+      <Suspense fallback={<div className="text-center py-20 text-zinc-500 text-sm">بارکردن...</div>}>
         <SearchContent />
       </Suspense>
     </AppShell>
