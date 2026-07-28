@@ -26,10 +26,30 @@ export default function SingleStoryPage() {
 
   const [likedCommentKeys, setLikedCommentKeys] = useState<string[]>([]);
 
+  const checkUserSession = () => {
+    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+    if (sessionUser) {
+      setUser(sessionUser);
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
+      });
+    }
+  };
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    checkUserSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      checkUserSession();
     });
+
+    const handleProfileUpdate = () => {
+      checkUserSession();
+    };
+
+    window.addEventListener("profile_updated", handleProfileUpdate);
+    window.addEventListener("storage", handleProfileUpdate);
 
     if (id) {
       fetchStoryAndComments();
@@ -39,6 +59,12 @@ export default function SingleStoryPage() {
     if (savedCommentLikes) {
       setLikedCommentKeys(JSON.parse(savedCommentLikes));
     }
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("profile_updated", handleProfileUpdate);
+      window.removeEventListener("storage", handleProfileUpdate);
+    };
   }, [id]);
 
   const fetchStoryAndComments = async () => {
@@ -62,6 +88,11 @@ export default function SingleStoryPage() {
     setLoading(false);
   };
 
+  const getActiveUsername = () => {
+    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+    return sessionUser?.username || user?.username || user?.user_metadata?.username || user?.email?.split("@")[0] || "بەکارهێنەر";
+  };
+
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
@@ -70,8 +101,7 @@ export default function SingleStoryPage() {
       return;
     }
 
-    const fallbackName = user.email?.split("@")[0] || "بەکارهێنەر";
-    const username = user.user_metadata?.username || fallbackName;
+    const username = getActiveUsername();
 
     const commentObj = {
       id: Date.now().toString(),
@@ -138,8 +168,7 @@ export default function SingleStoryPage() {
       return;
     }
 
-    const fallbackName = user.email?.split("@")[0] || "بەکارهێنەر";
-    const username = user.user_metadata?.username || fallbackName;
+    const username = getActiveUsername();
 
     const updated = comentakan.map(c => {
       if (c.id === commentId) {

@@ -21,47 +21,66 @@ export default function Navbar({
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState<string>("");
+  const [customAvatar, setCustomAvatar] = useState<string>("");
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifBox, setShowNotifBox] = useState(false);
 
-  useEffect(() => {
+  const syncUserData = () => {
+    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+    
     supabase.auth.getSession().then(({ data: { session } }) => {
       const activeUser = session?.user ?? null;
-      setUser(activeUser);
+      setUser(activeUser || sessionUser);
       setLoading(false);
-      loadNotifications(activeUser);
-      updateUsernameState(activeUser);
+
+      if (sessionUser?.username) {
+        setUsername(sessionUser.username);
+        loadNotifications(sessionUser.username);
+        const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
+        setCustomAvatar(savedAvatars[sessionUser.username] || "");
+      } else if (activeUser) {
+        const fallbackName = activeUser.user_metadata?.username || activeUser.email?.split("@")[0] || "بەکارهێنەر";
+        setUsername(fallbackName);
+        loadNotifications(fallbackName);
+        const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
+        setCustomAvatar(savedAvatars[fallbackName] || "");
+      } else {
+        setUsername("");
+        setCustomAvatar("");
+        setNotifications([]);
+      }
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const activeUser = session?.user ?? null;
-      setUser(activeUser);
-      setLoading(false);
-      loadNotifications(activeUser);
-      updateUsernameState(activeUser);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const updateUsernameState = (currentUser: any) => {
-    if (currentUser) {
-      const fallbackName = currentUser.email?.split("@")[0] || "بەکارهێنەر";
-      const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
-      const currentName = sessionUser?.username || currentUser.user_metadata?.username || fallbackName;
-      setUsername(currentName);
-    } else {
-      setUsername("");
-    }
   };
 
-  const loadNotifications = (currentUser: any) => {
-    if (currentUser) {
-      const currentName = currentUser.user_metadata?.username || currentUser.email?.split("@")[0];
+  useEffect(() => {
+    syncUserData();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      syncUserData();
+    });
+
+    const handleStorageChange = () => {
+      syncUserData();
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("focus", handleStorageChange);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("focus", handleStorageChange);
+    };
+  }, []);
+
+  const loadNotifications = (currentName: string) => {
+    if (currentName) {
       const savedNotifs = localStorage.getItem(`notifications_${currentName}`);
       if (savedNotifs) {
         setNotifications(JSON.parse(savedNotifs));
+      } else {
+        setNotifications([]);
       }
     } else {
       setNotifications([]);
@@ -71,15 +90,18 @@ export default function Navbar({
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const markAsRead = () => {
-    if (!user) return;
-    const currentName = user.user_metadata?.username || user.email?.split("@")[0];
+    if (!username) return;
     const updated = notifications.map(n => ({ ...n, read: true }));
     setNotifications(updated);
-    localStorage.setItem(`notifications_${currentName}`, JSON.stringify(updated));
+    localStorage.setItem(`notifications_${username}`, JSON.stringify(updated));
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem("kurdishtube_session");
+    setUser(null);
+    setUsername("");
+    setCustomAvatar("");
     setNotifications([]);
     router.refresh();
   };
@@ -181,10 +203,14 @@ export default function Navbar({
                 )}
               </div>
 
-              {/* Clean Profile Link */}
+              {/* Clean Profile Link with Custom Avatar Support */}
               <Link href={`/profile/${encodeURIComponent(username)}`} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-full group cursor-pointer">
-                <div className="w-7 h-7 rounded-full bg-brand text-black font-bold text-xs flex items-center justify-center shrink-0 shadow">
-                  {authorInitial}
+                <div className="w-7 h-7 rounded-full bg-brand text-black font-bold text-xs flex items-center justify-center shrink-0 shadow overflow-hidden">
+                  {customAvatar ? (
+                    <img src={customAvatar} alt={username} className="w-full h-full object-cover" />
+                  ) : (
+                    authorInitial
+                  )}
                 </div>
                 <span className="text-xs font-bold text-white group-hover:text-brand transition">@{username}</span>
               </Link>

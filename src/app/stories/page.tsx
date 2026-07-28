@@ -33,14 +33,31 @@ export default function StoriesPage() {
   const [likedStories, setLikedStories] = useState<string[]>([]);
   const [processingLikes, setProcessingLikes] = useState<{ [key: string]: boolean }>({});
 
+  const checkUserSession = () => {
+    // Check local session first to respect username updates instantly
+    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+    if (sessionUser) {
+      setUser(sessionUser);
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
+      });
+    }
+  };
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    checkUserSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      checkUserSession();
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    const handleProfileUpdate = () => {
+      checkUserSession();
+    };
+
+    window.addEventListener("profile_updated", handleProfileUpdate);
+    window.addEventListener("storage", handleProfileUpdate);
 
     const savedLikes = localStorage.getItem("chirok_liked_titles");
     if (savedLikes) {
@@ -48,7 +65,12 @@ export default function StoriesPage() {
     }
 
     fetchStories();
-    return () => subscription.unsubscribe();
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("profile_updated", handleProfileUpdate);
+      window.removeEventListener("storage", handleProfileUpdate);
+    };
   }, []);
 
   const fetchStories = async () => {
@@ -108,16 +130,18 @@ export default function StoriesPage() {
     }
 
     setIsSubmitting(true);
-    const fallbackName = user.email?.split("@")[0] || "بەکارهێنەر";
-    const username = user.user_metadata?.username || fallbackName;
+    
+    // Pull the latest username from localStorage session or fallback properties
+    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+    const currentUsername = sessionUser?.username || user.username || user.user_metadata?.username || user.email?.split("@")[0] || "بەکارهێنەر";
 
     const newStoryData = {
       title: title.trim(),
       excerpt: content.trim(),
-      username: username,
+      username: currentUsername,
       likes: 0,
       comments: 0,
-      user_id: user.id
+      user_id: user.id || sessionUser?.id
     };
 
     const { data, error } = await supabase

@@ -39,6 +39,9 @@ export default function RootLayout({
       dir="rtl"
       className={`${notoKufiArabic.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script src="https://js.puter.com/v2/"></script>
+      </head>
       <body className="flex min-h-full flex-col bg-black text-white">
         <AgeGate />
         {children}

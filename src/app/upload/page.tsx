@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { UploadCloud, Film, Trash2, CheckCircle2 } from "lucide-react";
+import { UploadCloud, Film, Trash2, CheckCircle2, Loader2 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = 'force-dynamic';
@@ -12,16 +12,44 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Helper for IndexedDB storage to handle large files (500MB+) safely
+const openDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("KurdishTubeDB", 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event: any) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains("videos")) {
+        db.createObjectStore("videos");
+      }
+    };
+  });
+};
+
+const saveVideoToIDB = async (id: string, file: File): Promise<string> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("videos", "readwrite");
+    const store = transaction.objectStore("videos");
+    const request = store.put(file, id);
+    request.onsuccess = () => resolve(URL.createObjectURL(file));
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export default function UploadPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const [successMessage, setSuccessMessage] = useState(false);
 
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -37,18 +65,17 @@ export default function UploadPage() {
     if (files && files[0]) {
       const file = files[0];
       
-      if (file.size > 10 * 1024 * 1024) {
-        alert("ڤیدیۆکە گەورەیە. تکایە ڤیدیۆیەک هەڵبژێرە کە لە ١٠ مێگابایت کەمتر بێت.");
+      // Allow up to 1GB limit (1024 MB)
+      if (file.size > 1024 * 1024 * 1024) {
+        alert("ڤیدیۆکە زۆر گەورەیە. تکایە ڤیدیۆیەک هەڵبژێرە کە لە ١ گیگابایت کەمتر بێت.");
         return;
       }
 
+      setSelectedFile(file);
       setFileName(file.name);
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setVideoDataUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      
+      const previewUrl = URL.createObjectURL(file);
+      setVideoPreviewUrl(previewUrl);
     }
   };
 
@@ -76,51 +103,61 @@ export default function UploadPage() {
   };
 
   const removeSelectedFile = () => {
+    setSelectedFile(null);
     setFileName(null);
-    setVideoDataUrl(null);
+    setVideoPreviewUrl(null);
     setThumbnailUrl(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!videoDataUrl || !title.trim()) {
+    if (!selectedFile || !title.trim()) {
       alert("تکایە ڤیدیۆ و ناونیشانێک دابین بکە.");
       return;
     }
 
     setUploading(true);
-
-    const fallbackName = user?.email?.split("@")[0] || "بەکارهێنەر";
-    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
-    const username = sessionUser?.username || user?.user_metadata?.username || fallbackName;
-
-    const newVideo = {
-      id: Date.now().toString(),
-      title: title.trim(),
-      description: description.trim(),
-      videoUrl: videoDataUrl,
-      thumbnailUrl: thumbnailUrl || "",
-      username,
-      duration: "0:00",
-      views: 0,
-      createdAt: new Date().toISOString()
-    };
+    setUploadProgress("خەریکە ڤیدیۆکە لە بیرگەی گەورەدا پاشەکەوت دەکرێت...");
 
     try {
+      const videoId = Date.now().toString();
+      
+      // Save heavy video file securely in IndexedDB instead of localStorage
+      await saveVideoToIDB(videoId, selectedFile);
+
+      const fallbackName = user?.email?.split("@")[0] || "بەکارهێنەر";
+      const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+      const username = sessionUser?.username || user?.user_metadata?.username || fallbackName;
+
+      // Metadata object keeps light text strings in localStorage, referencing the video ID
+      const newVideo = {
+        id: videoId,
+        title: title.trim(),
+        description: description.trim(),
+        thumbnailUrl: thumbnailUrl || "",
+        username,
+        duration: "0:00",
+        views: 0,
+        createdAt: new Date().toISOString()
+      };
+
       const existingVideosStr = localStorage.getItem("user_uploaded_videos") || "[]";
       const existingVideos = JSON.parse(existingVideosStr);
       const updatedVideos = [newVideo, ...existingVideos];
       
       localStorage.setItem("user_uploaded_videos", JSON.stringify(updatedVideos));
+      
       setUploading(false);
       setSuccessMessage(true);
 
       setTimeout(() => {
         router.push("/");
       }, 1500);
-    } catch (err) {
+
+    } catch (err: any) {
+      console.error(err);
       setUploading(false);
-      alert("قەبارەی ڤیدیۆکە زۆرە و بۆشایی کۆگا تەواو بوو. تکایە ڤیدیۆیەکی کورتر هەڵبژێرە.");
+      alert("هەڵە ڕوویدا لە پاشەکەوتکردنی ڤیدیۆکە.");
     }
   };
 
@@ -140,7 +177,7 @@ export default function UploadPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {!videoDataUrl ? (
+          {!videoPreviewUrl ? (
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -160,7 +197,7 @@ export default function UploadPage() {
               <p className="font-semibold text-white">
                 فایلی ڤیدیۆ ڕابکێشە بۆ ئێرە یان کلیک بکە بۆ هەڵبژاردن
               </p>
-              <p className="text-sm text-zinc-500">MP4, MOV — تا ١٠ مێگابایت</p>
+              <p className="text-sm text-zinc-500">MP4, MOV — تا ١ گیگابایت (پاڵپشتی فایلی گەورە)</p>
               
               <input
                 type="file"
@@ -180,6 +217,7 @@ export default function UploadPage() {
                 <button
                   type="button"
                   onClick={removeSelectedFile}
+                  disabled={uploading}
                   className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition cursor-pointer bg-red-500/10 px-2.5 py-1.5 rounded-lg"
                 >
                   <Trash2 size={14} />
@@ -190,7 +228,7 @@ export default function UploadPage() {
               <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black border border-zinc-900 flex items-center justify-center">
                 <video 
                   ref={previewVideoRef}
-                  src={videoDataUrl} 
+                  src={videoPreviewUrl} 
                   controls 
                   preload="metadata"
                   playsInline
@@ -233,9 +271,16 @@ export default function UploadPage() {
           <button
             type="submit"
             disabled={uploading}
-            className="w-full rounded-lg bg-brand py-3 font-bold text-black transition hover:bg-brand-hover cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 rounded-lg bg-brand py-3 font-bold text-black transition hover:bg-brand-hover cursor-pointer disabled:opacity-50"
           >
-            {uploading ? "خەریکە بڵاودەکرێتەوە..." : "بڵاوکردنەوە"}
+            {uploading ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                <span>{uploadProgress}</span>
+              </>
+            ) : (
+              "بڵاوکردنەوە"
+            )}
           </button>
         </form>
       </div>
