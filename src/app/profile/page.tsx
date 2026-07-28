@@ -7,6 +7,8 @@ import VideoGrid from "@/components/video/VideoGrid";
 import { videos } from "@/data/videos";
 import { cn } from "@/lib/utils";
 
+export const dynamic = 'force-dynamic';
+
 const TABS = [
   { id: "uploads", label: "ڤیدیۆکانم" },
   { id: "favorites", label: "دڵخوازەکان" },

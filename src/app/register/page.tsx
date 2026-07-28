@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = 'force-dynamic';
+
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -36,7 +38,6 @@ export default function RegisterPage() {
     } else {
       setSuccess("هەژمارەکەت بە سەرکەوتوویی دروستکرا! ئێستا دەتوانیت بچیتە ژوورەوە.");
       setLoading(false);
-      // Optional: send them to login page after a few seconds
       setTimeout(() => {
         router.push("/login");
       }, 3000);

@@ -7,22 +7,24 @@ import VideoGrid from "@/components/video/VideoGrid";
 import { videos } from "@/data/videos";
 import { Search } from "lucide-react";
 
+export const dynamic = 'force-dynamic';
+
 function SearchContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") ?? "";
   const [query, setQuery] = useState(initialQuery);
 
-const results = useMemo(() => {
-  const q = query.trim().toLowerCase();
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
 
-  if (!q) return [];
+    if (!q) return [];
 
-  return videos.filter(
-    (v) =>
-      v.title.toLowerCase().includes(q) ||
-      v.creator.toLowerCase().includes(q),
-  );
-}, [query]);
+    return videos.filter(
+      (v) =>
+        v.title.toLowerCase().includes(q) ||
+        v.creator.toLowerCase().includes(q),
+    );
+  }, [query]);
 
   return (
     <>

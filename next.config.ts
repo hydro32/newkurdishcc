@@ -1,18 +1,6 @@
-import type { NextConfig } from "next";
+/** @type {import('next').NextConfig} */
+const nextConfig = {};
 
-const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "picsum.photos",
-      },
-      {
-        protocol: "https",
-        hostname: "i.pravatar.cc",
-      },
-    ],
-  },
-};
-
-export default nextConfig;
+export default function config() {
+  return nextConfig;
+}

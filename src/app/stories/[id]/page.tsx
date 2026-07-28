@@ -6,6 +6,8 @@ import AppShell from "@/components/layout/AppShell";
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
 
+export const dynamic = 'force-dynamic';
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -189,7 +191,6 @@ export default function SingleStoryPage() {
     localStorage.setItem(`liked_comment_keys_${id}`, JSON.stringify(updatedLikedKeys));
   };
 
-  // Function to trigger reply box and auto-insert @username tag
   const openReplyBoxWithMention = (commentId: string, targetUsername: string) => {
     setActiveReplyBox(activeReplyBox === commentId ? null : commentId);
     setReplyInput(prev => ({
@@ -224,7 +225,6 @@ export default function SingleStoryPage() {
           ← گەڕانەوە بۆ هەموو چیرۆکەکان
         </Link>
 
-        {/* Story Content Card */}
         <article className="rounded-xl bg-zinc-900 p-8 border border-zinc-800">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-4 mb-4">
             <h1 className="text-2xl sm:text-3xl font-bold text-white">{story.title}</h1>
@@ -235,7 +235,6 @@ export default function SingleStoryPage() {
           <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap text-base sm:text-lg">{story.excerpt}</p>
         </article>
 
-        {/* Comments Section */}
         <div className="space-y-6 pt-4">
           <h3 className="text-xl font-bold text-white">💬 کۆمێنتەکان ({comentakan.length})</h3>
 

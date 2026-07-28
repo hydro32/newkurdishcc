@@ -5,6 +5,8 @@ import AppShell from "@/components/layout/AppShell";
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
 
+export const dynamic = 'force-dynamic';
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
