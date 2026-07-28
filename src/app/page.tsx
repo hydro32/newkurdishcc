@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import Link from "next/link";
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="text-center py-20 text-zinc-500 text-sm">چاوەڕوان بە...</div>}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get("tab");
 
@@ -22,16 +30,12 @@ export default function HomePage() {
             ...v,
             duration: v.duration || "0:00",
             views: v.views || 0,
-            // Fallback timestamp using index position or id if createdAt is missing
             createdAt: v.createdAt || v.id || index
           }));
 
-          // Sort or filter based on the active tab
           if (currentTab === "top") {
-            // Sort highest view count to lowest view count
             updated.sort((a: any, b: any) => (b.views || 0) - (a.views || 0));
           } else if (currentTab === "new") {
-            // Sort newest first (using dates or fallback sequential checks)
             updated.sort((a: any, b: any) => {
               const dateA = new Date(a.createdAt).getTime();
               const dateB = new Date(b.createdAt).getTime();
@@ -39,7 +43,6 @@ export default function HomePage() {
               if (!isNaN(dateA) && !isNaN(dateB)) {
                 return dateB - dateA;
               }
-              // Fallback comparison if IDs are timestamps
               return String(b.id).localeCompare(String(a.id));
             });
           }
