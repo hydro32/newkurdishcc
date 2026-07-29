@@ -41,10 +41,8 @@ export default function AgeGate() {
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-900/90 p-8 text-center text-white shadow-2xl relative overflow-hidden"
           >
-            {/* Subtle top glow accent */}
             <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-brand/10 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Icon Container */}
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10 border border-brand/20 text-brand shadow-inner">
               <ShieldAlert size={32} />
             </div>
