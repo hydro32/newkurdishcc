@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Noto_Kufi_Arabic } from "next/font/google";
+import Script from "next/script";
 import AgeGate from "@/components/AgeGate";
 import "./globals.css";
 
@@ -40,7 +41,7 @@ export default function RootLayout({
       className={`${notoKufiArabic.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script src="https://js.puter.com/v2/"></script>
+        <Script src="https://js.puter.com/v2/" strategy="beforeInteractive" />
       </head>
       <body className="flex min-h-full flex-col bg-black text-white">
         <AgeGate />

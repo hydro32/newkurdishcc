@@ -39,16 +39,25 @@ function ProfileContent() {
 
   useEffect(() => {
     async function initUser() {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      setUser(currentUser ?? null);
 
-      const fallbackName = currentUser?.email?.split("@")[0] || "بەکارهێنەری کوردیش تیوب";
-      const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
-      const currentUsername = sessionUser?.username || currentUser?.user_metadata?.username || fallbackName;
+      if (currentUser) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", currentUser.id)
+          .single();
 
-      setUsername(currentUsername);
-      setNewUsername(currentUsername);
+        if (profileData?.username) {
+          setUsername(profileData.username);
+          setNewUsername(profileData.username);
+        } else {
+          const fallbackName = currentUser.email?.split("@")[0] || "بەکارهێنەری کوردیش تیوب";
+          setUsername(fallbackName);
+          setNewUsername(fallbackName);
+        }
+      }
 
       const savedPhoto = localStorage.getItem("user_profile_photo");
       if (savedPhoto) {
@@ -65,23 +74,34 @@ function ProfileContent() {
     try {
       const existingVideosStr = localStorage.getItem("user_uploaded_videos") || "[]";
       const parsed = JSON.parse(existingVideosStr);
-      // Filter out corrupted entries causing the NotSupportedError
-      const validVideos = Array.isArray(parsed) ? parsed.filter(v => v && v.id) : [];
+      const validVideos = Array.isArray(parsed) ? parsed.filter((v: any) => v && v.id) : [];
       setUserUploadedVideos(validVideos);
-    } catch (e) {
+    } catch {
       setUserUploadedVideos([]);
     }
   };
 
-  const handleSaveUsername = () => {
-    if (!newUsername.trim()) return;
+  const handleSaveUsername = async () => {
+    if (!newUsername.trim() || !user) return;
 
-    setUsername(newUsername.trim());
+    const trimmedName = newUsername.trim();
+
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ 
+        id: user.id, 
+        username: trimmedName, 
+        updated_at: new Date() 
+      });
+
+    if (error) {
+      alert("Error updating username: " + error.message);
+      return;
+    }
+
+    setUsername(trimmedName);
     setIsEditingUsername(false);
-
-    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "{}") : {};
-    sessionUser.username = newUsername.trim();
-    localStorage.setItem("kurdishtube_session", JSON.stringify(sessionUser));
+    alert("Username updated successfully!");
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -180,7 +200,7 @@ function ProfileContent() {
         </div>
       </div>
 
-      {/* Tabs Row with Delete Selected Button */}
+      {/* Tabs Row */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-zinc-800 pb-3">
         <div className="flex gap-2">
           {TABS.map((t) => (
@@ -242,7 +262,6 @@ function ProfileContent() {
                     )}
                   </Link>
 
-                  {/* Checkbox overlay placed on top-left of the thumbnail */}
                   <div className="absolute top-2 left-2 z-20">
                     <input
                       type="checkbox"
@@ -252,7 +271,6 @@ function ProfileContent() {
                     />
                   </div>
 
-                  {/* Info block */}
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <h3 className="font-semibold text-white line-clamp-1">{video.title}</h3>

@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { UploadCloud, Film, Trash2, CheckCircle2, Loader2 } from "lucide-react";
+import { UploadCloud, Film, Trash2, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import Link from "next/link";
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Helper for IndexedDB storage to handle large files (500MB+) safely
 const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("KurdishTubeDB", 1);
@@ -40,7 +40,7 @@ const saveVideoToIDB = async (id: string, file: File): Promise<string> => {
 
 export default function UploadPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
@@ -56,16 +56,21 @@ export default function UploadPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    async function verifyAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setIsAuthenticated(false);
+      } else {
+        setIsAuthenticated(true);
+      }
+    }
+    verifyAuth();
   }, []);
 
   const handleFiles = (files: FileList | null) => {
     if (files && files[0]) {
       const file = files[0];
       
-      // Allow up to 1GB limit (1024 MB)
       if (file.size > 1024 * 1024 * 1024) {
         alert("ڤیدیۆکە زۆر گەورەیە. تکایە ڤیدیۆیەک هەڵبژێرە کە لە ١ گیگابایت کەمتر بێت.");
         return;
@@ -111,6 +116,14 @@ export default function UploadPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session || !session.user) {
+      setIsAuthenticated(false);
+      return;
+    }
+
     if (!selectedFile || !title.trim()) {
       alert("تکایە ڤیدیۆ و ناونیشانێک دابین بکە.");
       return;
@@ -121,21 +134,29 @@ export default function UploadPage() {
 
     try {
       const videoId = Date.now().toString();
-      
-      // Save heavy video file securely in IndexedDB instead of localStorage
       await saveVideoToIDB(videoId, selectedFile);
 
-      const fallbackName = user?.email?.split("@")[0] || "بەکارهێنەر";
-      const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
-      const username = sessionUser?.username || user?.user_metadata?.username || fallbackName;
+      const user = session.user;
+      
+      // Prioritize local session storage so the newly updated/renamed username is used instantly
+      const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "{}") : null;
+      
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", user.id)
+        .single();
 
-      // Metadata object keeps light text strings in localStorage, referencing the video ID
+      const fallbackName = user.email?.split("@")[0] || "بەکارهێنەر";
+      const username = sessionUser?.username || profileData?.username || user.user_metadata?.username || fallbackName;
+
       const newVideo = {
         id: videoId,
         title: title.trim(),
         description: description.trim(),
         thumbnailUrl: thumbnailUrl || "",
         username,
+        userId: user.id, // Explicitly saved so you can always access/delete it securely
         duration: "0:00",
         views: 0,
         createdAt: new Date().toISOString()
@@ -160,6 +181,40 @@ export default function UploadPage() {
       alert("هەڵە ڕوویدا لە پاشەکەوتکردنی ڤیدیۆکە.");
     }
   };
+
+  if (isAuthenticated === null) {
+    return (
+      <AppShell>
+        <div dir="rtl" className="max-w-2xl mx-auto flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="animate-spin text-brand" size={32} />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (isAuthenticated === false) {
+    return (
+      <AppShell>
+        <div dir="rtl" className="max-w-md mx-auto mt-16 p-8 rounded-2xl border border-zinc-800 bg-zinc-950 text-center space-y-6 shadow-2xl">
+          <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto text-red-400">
+            <AlertCircle size={32} />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-white">پێویستە چوونەژوورەوە ئەنجام بدەیت</h1>
+            <p className="text-zinc-400 text-sm">
+              بۆ ئەوەی بتوانیت ڤیدیۆ بڵاوبکەیتەوە و ببیتە خاوەنی کەناڵی خۆت، تکایە سەرەتا هه‌ژمارەکەت بەکاربهێنە.
+            </p>
+          </div>
+          <Link
+            href="/"
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-brand font-bold text-black hover:bg-brand-hover transition cursor-pointer"
+          >
+            گەڕانەوە بۆ پەڕەی سەرەکی
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

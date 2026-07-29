@@ -35,52 +35,72 @@ export default function ProfilePage() {
   const [customAvatar, setCustomAvatar] = useState<string>("");
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user ?? null);
-    });
-
-    loadProfileData();
+    async function initSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
+      setCurrentUser(user);
+      loadProfileData(user);
+    }
+    initSession();
   }, [profileUsername]);
 
-  const loadProfileData = () => {
+  const loadProfileData = (user: any) => {
     if (!profileUsername) return;
     setNewUsername(profileUsername);
 
-    // Load custom profile avatar if saved
+    // 1. Load custom profile avatar
     const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
-    setCustomAvatar(savedAvatars[profileUsername] || "");
+    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
+    
+    let avatarUrl = savedAvatars[profileUsername] || "";
+    if (!avatarUrl && user?.id) {
+      avatarUrl = localStorage.getItem(`profile_photo_${user.id}`) || "";
+    }
+    setCustomAvatar(avatarUrl);
 
-    // Load uploaded videos
+    // 2. Load uploaded videos using robust matching
     const savedVideos = localStorage.getItem("user_uploaded_videos");
     let allList: any[] = [];
     if (savedVideos) {
       try {
         allList = JSON.parse(savedVideos);
-        const filtered = allList.filter((v: any) => 
-          v.username && v.username.toLowerCase() === profileUsername.toLowerCase()
-        );
+        const filtered = allList.filter((v: any) => {
+          if (!v.username) return false;
+          const vUser = v.username.trim().toLowerCase();
+          const targetUser = profileUsername.toLowerCase();
+          const sessionName = sessionUser?.username?.trim()?.toLowerCase();
+          const emailPrefix = user?.email?.split("@")[0]?.toLowerCase();
+
+          return vUser === targetUser || 
+                 (sessionName && vUser === sessionName) || 
+                 (emailPrefix && vUser === emailPrefix);
+        });
         setUserVideos(filtered);
       } catch (e) {
         setUserVideos([]);
       }
     }
 
-    // Load liked videos for this profile user
+    // 3. Load liked videos matching profile user
     const likedList: any[] = [];
     allList.forEach((v) => {
       const likedUsers = JSON.parse(localStorage.getItem(`video_liked_users_${v.id}`) || "[]");
-      if (likedUsers.map((u: string) => u.toLowerCase()).includes(profileUsername.toLowerCase())) {
+      const normalizedLikedUsers = likedUsers.map((u: string) => u.toLowerCase().trim());
+      if (
+        normalizedLikedUsers.includes(profileUsername.toLowerCase()) || 
+        (sessionUser?.username && normalizedLikedUsers.includes(sessionUser.username.toLowerCase()))
+      ) {
         likedList.push(v);
       }
     });
     setLikedVideos(likedList);
 
+    // 4. Followers and following state
     const allFollows = JSON.parse(localStorage.getItem("user_follows") || "{}");
     const matchedKey = Object.keys(allFollows).find(k => k.toLowerCase() === profileUsername.toLowerCase());
     const userFollowers = matchedKey ? allFollows[matchedKey] : [];
     setFollowersCount(userFollowers.length);
 
-    const sessionUser = JSON.parse(localStorage.getItem("kurdishtube_session") || "null");
     const myName = sessionUser?.username;
     if (myName && userFollowers.map((u: string) => u.toLowerCase()).includes(myName.toLowerCase())) {
       setIsFollowing(true);
@@ -123,13 +143,20 @@ export default function ProfilePage() {
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        setCustomAvatar(reader.result as string);
+        const result = reader.result as string;
+        setCustomAvatar(result);
+        const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
+        savedAvatars[profileUsername] = result;
+        localStorage.setItem("user_profile_avatars", JSON.stringify(savedAvatars));
+        if (currentUser?.id) {
+          localStorage.setItem(`profile_photo_${currentUser.id}`, result);
+        }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedNewName = newUsername.trim();
     if (!trimmedNewName) {
@@ -137,69 +164,65 @@ export default function ProfilePage() {
       return;
     }
 
-    // 1. Update avatar storage under the new username key and clean up old one if renamed
+    const oldUsername = profileUsername;
+
+    // 1. Update Supabase profiles table if logged in
+    if (currentUser?.id) {
+      await supabase
+        .from("profiles")
+        .upsert({ 
+          id: currentUser.id, 
+          username: trimmedNewName, 
+          updated_at: new Date() 
+        });
+    }
+
+    // 2. Safely migrate Avatars to the new username key
     const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
-    if (customAvatar) {
-      savedAvatars[trimmedNewName] = customAvatar;
-      if (profileUsername.toLowerCase() !== trimmedNewName.toLowerCase()) {
-        delete savedAvatars[profileUsername];
+    const activeAvatar = customAvatar || savedAvatars[oldUsername];
+    if (activeAvatar) {
+      savedAvatars[trimmedNewName] = activeAvatar;
+      if (oldUsername.toLowerCase() !== trimmedNewName.toLowerCase()) {
+        delete savedAvatars[oldUsername];
       }
-    } else {
-      delete savedAvatars[trimmedNewName];
     }
     localStorage.setItem("user_profile_avatars", JSON.stringify(savedAvatars));
 
-    // 2. If username changed, update all references across videos, comments, and sessions
-    if (trimmedNewName.toLowerCase() !== profileUsername.toLowerCase()) {
-      const savedVideos = localStorage.getItem("user_uploaded_videos");
-      let allList: any[] = [];
-      if (savedVideos) {
-        try {
-          allList = JSON.parse(savedVideos);
-          const updatedList = allList.map((v: any) => {
-            if (v.username && v.username.toLowerCase() === profileUsername.toLowerCase()) {
-              return { ...v, username: trimmedNewName };
-            }
-            return v;
-          });
-          localStorage.setItem("user_uploaded_videos", JSON.stringify(updatedList));
-        } catch (err) {
-          console.error(err);
-        }
-      }
-
-      // Update comments across all videos where username matches
-      allList.forEach((v) => {
-        const commentKey = `video_comments_${v.id}`;
-        const comments = JSON.parse(localStorage.getItem(commentKey) || "[]");
-        let updated = false;
-        const modifiedComments = comments.map((c: any) => {
-          if (c.username && c.username.toLowerCase() === profileUsername.toLowerCase()) {
-            updated = true;
-            return { ...c, username: trimmedNewName };
-          }
-          return c;
-        });
-        if (updated) {
-          localStorage.setItem(commentKey, JSON.stringify(modifiedComments));
-        }
-      });
+    if (currentUser?.id && activeAvatar) {
+      localStorage.setItem(`profile_photo_${currentUser.id}`, activeAvatar);
     }
 
-    // 3. Update session storage so the navbar and active user states match immediately
+    // 3. Update uploaded videos with the new username reference
+    const savedVideos = localStorage.getItem("user_uploaded_videos");
+    if (savedVideos) {
+      try {
+        const allList = JSON.parse(savedVideos);
+        const updatedList = allList.map((v: any) => {
+          if (v.username && v.username.toLowerCase() === oldUsername.toLowerCase()) {
+            return { ...v, username: trimmedNewName };
+          }
+          return v;
+        });
+        localStorage.setItem("user_uploaded_videos", JSON.stringify(updatedList));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // 4. Update session storage so navbar and app session match immediately
     const sessionUser = JSON.parse(localStorage.getItem("kurdishtube_session") || "{}");
     sessionUser.username = trimmedNewName;
+    if (currentUser?.id) sessionUser.id = currentUser.id;
     localStorage.setItem("kurdishtube_session", JSON.stringify(sessionUser));
 
-    // 4. Trigger global event so Navbar updates instantly everywhere
+    window.dispatchEvent(new Event("storage"));
     window.dispatchEvent(new Event("profile_updated"));
-
     setIsEditModalOpen(false);
 
-    if (trimmedNewName.toLowerCase() !== profileUsername.toLowerCase()) {
+    if (trimmedNewName.toLowerCase() !== oldUsername.toLowerCase()) {
       router.push(`/profile/${encodeURIComponent(trimmedNewName)}`);
     } else {
-      loadProfileData();
+      loadProfileData(currentUser);
     }
   };
 

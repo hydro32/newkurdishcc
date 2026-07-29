@@ -26,31 +26,52 @@ export default function Navbar({
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifBox, setShowNotifBox] = useState(false);
 
-  const syncUserData = () => {
-    const sessionUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("kurdishtube_session") || "null") : null;
-    
-    supabase.auth.getSession().then(({ data: { session } }) => {
+  const syncUserData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
       const activeUser = session?.user ?? null;
-      setUser(activeUser || sessionUser);
-      setLoading(false);
 
-      if (sessionUser?.username) {
-        setUsername(sessionUser.username);
-        loadNotifications(sessionUser.username);
-        const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
-        setCustomAvatar(savedAvatars[sessionUser.username] || "");
-      } else if (activeUser) {
-        const fallbackName = activeUser.user_metadata?.username || activeUser.email?.split("@")[0] || "بەکارهێنەر";
-        setUsername(fallbackName);
-        loadNotifications(fallbackName);
-        const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
-        setCustomAvatar(savedAvatars[fallbackName] || "");
-      } else {
+      if (!activeUser) {
+        // No active supabase session, clear everything cleanly
+        setUser(null);
         setUsername("");
         setCustomAvatar("");
         setNotifications([]);
+        setLoading(false);
+        return;
       }
-    });
+
+      setUser(activeUser);
+
+      // Fetch official username from Supabase profiles table
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", activeUser.id)
+        .single();
+
+      const fallbackName = activeUser.user_metadata?.username || activeUser.email?.split("@")[0] || "بەکارهێنەر";
+      const resolvedUsername = profileData?.username || fallbackName;
+
+      setUsername(resolvedUsername);
+
+      // Automatically keep local session storage in sync so other pages don't desync
+      const currentLocalSession = JSON.parse(localStorage.getItem("kurdishtube_session") || "{}");
+      if (currentLocalSession.username !== resolvedUsername) {
+        localStorage.setItem("kurdishtube_session", JSON.stringify({ ...currentLocalSession, username: resolvedUsername, id: activeUser.id }));
+      }
+
+      // Load avatar with fallback checking
+      const savedAvatars = JSON.parse(localStorage.getItem("user_profile_avatars") || "{}");
+      let avatarUrl = savedAvatars[resolvedUsername] || localStorage.getItem(`profile_photo_${activeUser.id}`) || "";
+      setCustomAvatar(avatarUrl);
+
+      loadNotifications(resolvedUsername);
+    } catch (err) {
+      console.error("Error syncing user data:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -66,11 +87,13 @@ export default function Navbar({
 
     window.addEventListener("storage", handleStorageChange);
     window.addEventListener("focus", handleStorageChange);
+    window.addEventListener("profile_updated", handleStorageChange);
 
     return () => {
       subscription.unsubscribe();
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("focus", handleStorageChange);
+      window.removeEventListener("profile_updated", handleStorageChange);
     };
   }, []);
 
@@ -138,7 +161,7 @@ export default function Navbar({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="گەڕان بۆ ڤیدیۆ..."
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-4 pl-10 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40 text-right"
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-4 pl-10 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40 text-right text-white"
           />
           <button type="submit" className="absolute top-1/2 left-3 -translate-y-1/2 text-zinc-400 hover:text-brand" aria-label="گەڕان">
             <Search size={18} />
@@ -242,7 +265,7 @@ export default function Navbar({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="گەڕان بۆ ڤیدیۆ..."
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-4 pl-10 outline-none focus:border-brand focus:ring-2 focus:ring-brand/40 text-right"
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-4 pl-10 outline-none focus:border-brand focus:ring-2 focus:ring-brand/40 text-right text-white"
             />
             <button type="submit" className="absolute top-1/2 left-3 -translate-y-1/2 text-zinc-400 hover:text-brand" aria-label="گەڕان">
               <Search size={18} />

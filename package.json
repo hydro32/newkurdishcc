@@ -12,6 +12,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@supabase/supabase-js": "^2.110.8",
     "firebase": "^12.16.0",
     "framer-motion": "^12.42.2",
